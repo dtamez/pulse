@@ -86,7 +86,7 @@ class ApiKey(Base):
     __tablename__ = "api_key"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, dfault=uuid.uuid4
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("tenant.id", ondelete="CASCADE"), nullable=False
@@ -115,7 +115,12 @@ class Event(Base):
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("event_types.id"),
+        ForeignKey("event_type.id"),
+        nullable=False,
+    )
+    event_type_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("event_type.id"),
         nullable=False,
     )
     entity_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -148,12 +153,12 @@ class DailyAggregate(Base):
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("tenants.id"),
+        ForeignKey("tenant.id"),
         nullable=False,
     )
     event_type_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("event_types.id"),
+        ForeignKey("event_type.id"),
         nullable=False,
     )
     aggregate_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -177,7 +182,7 @@ class ReportJob(Base):
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("tenants.id"),
+        ForeignKey("tenant.id"),
         nullable=False,
     )
     report_type: Mapped[str] = mapped_column(String(100), nullable=False)
