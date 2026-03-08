@@ -10,11 +10,17 @@ dependencies = [
     "celery>=5.6.2",
     "fastapi>=0.135.1",
     "httpx>=0.28.1",
+    "ipdb>=0.13.13",
+    "ipython>=9.11.0",
     "logzero>=1.7.0",
     "psycopg>=3.3.3",
     "pydantic-settings>=2.13.1",
     "pytest>=9.0.2",
+    "pytest-env>=1.5.0",
     "redis>=7.2.1",
     "sqlalchemy[asyncio]>=2.0.48",
     "uvicorn[standard]>=0.41.0",
 ]
+
+[tool.pytest_env]
+TESTING = 1

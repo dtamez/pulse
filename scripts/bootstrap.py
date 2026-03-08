@@ -2,12 +2,12 @@ import asyncio
 import hashlib
 import secrets
 
-from api.database import async_session_maker
-from api.models import ApiKey, Tenant
+from core.database import async_session
+from core.models import ApiKey, Tenant
 
 
 async def bootstrap():
-    async with async_session_maker() as session:
+    async with async_session() as session:
         tenant = Tenant(
             external_key="acme",
             name="Acme Corp",
@@ -28,7 +28,7 @@ async def bootstrap():
         await session.commit()
 
         print(f"Created Tenant: {tenant.external_key}")
-        print(f"API key: {raw_key}")
+        print(f"API key: {raw_key}")  # pulse_243815f0d3ef782202c235976185d2ee
 
 
 if __name__ == "__main__":

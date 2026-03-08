@@ -1,8 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
+import pytest
 from dateutil.relativedelta import relativedelta
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from .main import app
 
@@ -19,7 +21,7 @@ client = TestClient(app)
 
 
 def get_a_date(when: When) -> str | None:
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     dt: datetime = now
     match when:
         case When.NOW:
@@ -36,18 +38,50 @@ def get_a_date(when: When) -> str | None:
     return dt.isoformat()
 
 
-def test_ingest_events_invalid_api_key():
-
-    resp = client.post(
-        "/events",
-        headers={"X-API": "BOGUS_API_KEY"},
-        json={
-            "event_type": "api_call",
-            "entity_id": "some_user",
-            "occurred_at": get_a_date(When.HOURS_AGO),
-            "payload": {"endpoint": "/create_invoice", "status": 200, "latency_ms": 77},
-        },
-    )
+@pytest.mark.anyio
+async def test_ingest_events_invalid_api_key():
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        resp = await client.post(
+            "/events",
+            headers={"X-API-Key": "BOGUS_API_KEY"},
+            json={
+                "event_type": "api_call",
+                "entity_id": "some_user",
+                "occurred_at": get_a_date(When.HOURS_AGO),
+                "payload": {
+                    "endpoint": "/create_invoice",
+                    "status": 200,
+                    "latency_ms": 77,
+                },
+            },
+        )
 
     assert resp.status_code == 400
     assert resp.json() == {"detail": "Invalid X-API key"}
+
+
+@pytest.mark.anyio
+async def test_ingest_events_valid():
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        resp = await client.post(
+            "/events",
+            headers={"X-API-Key": "pulse_243815f0d3ef782202c235976185d2ee"},
+            json={
+                "event_type": "api_call",
+                "entity_id": "some_user",
+                "occurred_at": get_a_date(When.HOURS_AGO),
+                "payload": {
+                    "endpoint": "/create_invoice",
+                    "status": 200,
+                    "latency_ms": 77,
+                },
+            },
+        )
+
+    assert resp.status_code == 200
