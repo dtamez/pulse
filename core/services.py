@@ -1,0 +1,3 @@
+async def aggregate_event_impl(event_id: str) -> None:
+    # a long running task...
+    pass

@@ -17,7 +17,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
-from api.database import Base
+from core.database import Base
 
 
 class TenantStatus(str, enum.Enum):
@@ -79,7 +79,9 @@ class EventType(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     events: Mapped[list["Event"]] = relationship(back_populates="event_type")
-    daily_aggregates: Mapped[list["Event"]] = relationship(back_populates="event_type")
+    daily_aggregates: Mapped[list["DailyAggregate"]] = relationship(
+        back_populates="event_type"
+    )
 
 
 class ApiKey(Base):
@@ -115,7 +117,7 @@ class Event(Base):
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("event_type.id"),
+        ForeignKey("tenant.id"),
         nullable=False,
     )
     event_type_id: Mapped[uuid.UUID] = mapped_column(
