@@ -11,11 +11,6 @@ from sqlalchemy.pool import NullPool
 
 from core.config import settings
 
-print("**************")
-print("ASYNC_DATABASE_URL =", settings.ASYNC_DATABASE_URL)
-print("SYNC_DATABASE_URL =", settings.SYNC_DATABASE_URL)
-print("**************")
-
 
 class Base(DeclarativeBase):
     pass

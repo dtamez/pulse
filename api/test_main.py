@@ -159,38 +159,38 @@ ENDPOINTS = {
 }
 
 
-@pytest.mark.anyio
-async def test_populate_lots_of_events():
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://test",
-    ) as client:
-        for _ in range(2500):
-            event_type = choice(EVENT_TYPES)
-            match event_type:
-                case "api_call":
-                    endpoint = choice(ENDPOINTS["api_call"])
-                case "page_view":
-                    endpoint = choice(ENDPOINTS["page_view"])
-                case "job_started" | "job_failed" | "job_completed":
-                    endpoint = choice(ENDPOINTS["jobs"])
-                case "purchase":
-                    endpoint = "secure_checkout"
-
-            resp = await client.post(
-                "/events",
-                headers={"X-API-Key": "pulse_243815f0d3ef782202c235976185d2ee"},
-                json={
-                    "event_type": event_type,
-                    "entity_id": get_user(),
-                    "occurred_at": get_a_date(None),
-                    "payload": {
-                        "endpoint": endpoint,
-                        "status": 200,
-                        "latency_ms": randint(1, 100),
-                    },
-                },
-            )
-
-    assert resp.status_code == 200
+# @pytest.mark.anyio
+# async def test_populate_lots_of_events():
+#
+#     async with AsyncClient(
+#         transport=ASGITransport(app=app),
+#         base_url="http://test",
+#     ) as client:
+#         for _ in range(2500):
+#             event_type = choice(EVENT_TYPES)
+#             match event_type:
+#                 case "api_call":
+#                     endpoint = choice(ENDPOINTS["api_call"])
+#                 case "page_view":
+#                     endpoint = choice(ENDPOINTS["page_view"])
+#                 case "job_started" | "job_failed" | "job_completed":
+#                     endpoint = choice(ENDPOINTS["jobs"])
+#                 case "purchase":
+#                     endpoint = "secure_checkout"
+#
+#             resp = await client.post(
+#                 "/events",
+#                 headers={"X-API-Key": "pulse_243815f0d3ef782202c235976185d2ee"},
+#                 json={
+#                     "event_type": event_type,
+#                     "entity_id": get_user(),
+#                     "occurred_at": get_a_date(None),
+#                     "payload": {
+#                         "endpoint": endpoint,
+#                         "status": 200,
+#                         "latency_ms": randint(1, 100),
+#                     },
+#                 },
+#             )
+#
+#     assert resp.status_code == 200

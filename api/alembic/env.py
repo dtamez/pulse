@@ -3,8 +3,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from api import models
-from api.database import Base
+from core import models
+from core.config import settings
+from core.database import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -25,7 +26,7 @@ target_metadata = Base.metadata
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
-syncronous_db_url = "postgresql+psycopg://pulsinator:altaiagfa@localhost:5432/pulse"
+syncronous_db_url = settings.SYNC_DATABASE_URL
 config.set_main_option("sqlalchemy.url", syncronous_db_url)
 
 
