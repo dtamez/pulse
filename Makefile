@@ -11,4 +11,4 @@ docker-up:
 	docker compose up --build
 
 load-events:
-	PYTHONPATH=. python scripts/load_events.py
+	PYTHONPATH=. python scripts/load_events.py --api-key pulse_1a31b0c50a6f237f73159c653716fbdb --requests 10000 --concurrency 100
