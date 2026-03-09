@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Env variables for different environments
+.env 
+.env.test
+.env.docker
+

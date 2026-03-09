@@ -1,15 +1,17 @@
 import hashlib
-from datetime import datetime, timezone
+import uuid
+from datetime import date, datetime, timezone
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from core.database import get_db
-from core.models import ApiKey, Event, EventType
-from worker.app import celery_app
+from core.models import ApiKey, DailyAggregate, Event, EventType
+from worker.tasks import aggregate_event
 
 app = FastAPI()
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=True)
@@ -22,12 +24,7 @@ class EventIn(BaseModel):
     payload: dict = {}
 
 
-@app.post("/events")
-async def ingest_event(
-    event: EventIn,
-    raw_key: str = Depends(api_key_header),
-    db: AsyncSession = Depends(get_db),
-):
+async def authenticate_api_key(raw_key, db) -> ApiKey:
     # authenticate the api key (from header)
     if not raw_key:
         raise HTTPException(status_code=400, detail="Missing X-API key")
@@ -40,6 +37,16 @@ async def ingest_event(
     api_key = result.scalar_one_or_none()
     if not api_key:
         raise HTTPException(status_code=400, detail="Invalid X-API key")
+    return api_key
+
+
+@app.post("/events")
+async def ingest_event(
+    event: EventIn,
+    raw_key: str = Depends(api_key_header),
+    db: AsyncSession = Depends(get_db),
+):
+    api_key = await authenticate_api_key(raw_key, db)
     # get our tenant
     tenant_id = api_key.tenant_id
     # validate event type
@@ -67,7 +74,7 @@ async def ingest_event(
     await db.refresh(db_event)
 
     # celery task to update aggregates
-    celery_app.send_task("worker.tasks.aggregate_event", args=[str(db_event.id)])
+    aggregate_event.delay(str(db_event.id))
 
     # return status and event id
     return {
@@ -77,11 +84,57 @@ async def ingest_event(
 
 
 @app.get("/tenant/{tenant_id}/summary")
-async def tenant_summary(summary_date: datetime):
+async def tenant_summary(
+    tenant_id: uuid.UUID,
+    summary_date: date | None = None,
+    raw_key: str = Depends(api_key_header),
+    db: AsyncSession = Depends(get_db),
+):
+
+    _api_key = await authenticate_api_key(raw_key, db)
+
     # read from daily_aggregate
-    # optionally filter by date
+    if summary_date is not None:
+        # optionally filter by date
+        result = await db.execute(
+            select(DailyAggregate)
+            .options(
+                selectinload(DailyAggregate.event_type),
+                selectinload(DailyAggregate.tenant),
+            )
+            .where(
+                DailyAggregate.tenant_id == tenant_id,
+                DailyAggregate.aggregate_date == summary_date,
+            )
+        )
+    else:
+        result = await db.execute(
+            select(DailyAggregate)
+            .options(
+                selectinload(DailyAggregate.event_type),
+                selectinload(DailyAggregate.tenant),
+            )
+            .where(DailyAggregate.tenant_id == tenant_id)
+            .order_by(desc(DailyAggregate.aggregate_date))
+        )
+
+    dailies = result.scalars().all()
+    counts = []
+    tenant_name = ""
+    for daily in dailies:
+        if not tenant_name:
+            tenant_name = daily.tenant.name
+        counts.append(
+            {
+                "event_type": daily.event_type.name,
+                "count": daily.event_count,
+            }
+        )
     # return counts by event type
-    pass
+    return {
+        "tenant": tenant_name,
+        "counts_by_event_type": counts,
+    }
 
 
 @app.get("/health")

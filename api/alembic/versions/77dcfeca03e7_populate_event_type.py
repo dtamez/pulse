@@ -11,7 +11,7 @@ from typing import Sequence, Union
 
 from alembic import op
 
-from api.models import EventType
+from core.models import EventType
 
 # revision identifiers, used by Alembic.
 revision: str = "77dcfeca03e7"
