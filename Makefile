@@ -9,3 +9,6 @@ celery:
 
 docker-up:
 	docker compose up --build
+
+load-events:
+	PYTHONPATH=. python scripts/load_events.py
