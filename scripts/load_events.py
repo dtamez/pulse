@@ -84,7 +84,7 @@ async def run_load(
 
     async with httpx.AsyncClient(
         base_url=base_url,
-        timeout=60.0,
+        timeout=30.0,
         limits=limits,
     ) as client:
         tasks = []

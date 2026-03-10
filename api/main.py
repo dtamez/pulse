@@ -93,28 +93,27 @@ async def ingest_event(
         payload_json=event.payload,
     )
     db.add(db_event)
+    await db.flush()
     t3 = perf_counter()
+    event_id = str(db_event.id)
     await db.commit()
     t4 = perf_counter()
-    await db.refresh(db_event)
-    t5 = perf_counter()
 
     print(
         f"timing auth={t1 - t0:.4f}s "
         f"evt_type={t2 - t1:.4f}s "
-        f"add={t3 - t2:.4f}s "
+        f"add/flush={t3 - t2:.4f}s "
         f"commit={t4 - t3:.4f}s "
-        f"refresh={t5 - t4:.4f}s "
-        f"total={t5 - t0:.4f}s"
+        f"total={t4 - t0:.4f}s"
     )
 
     # celery task to update aggregates
-    aggregate_event.delay(str(db_event.id))
+    aggregate_event.delay(str(event_id))
 
     # return status and event id
     return {
         "status": "accepted",
-        "event_id": db_event.id,
+        "event_id": event_id,
     }
 
 
