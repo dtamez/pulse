@@ -2,8 +2,9 @@ import hashlib
 import uuid
 from datetime import date, datetime, timezone
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI
 from fastapi.security import APIKeyHeader
+from logzero import logger
 from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,9 @@ from worker.tasks import aggregate_event
 app = FastAPI()
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=True)
 
+_event_type_cache: dict[str, uuid.UUID] = {}
+_api_key_cache: dict[str, uuid.UUID] = {}
+
 
 class EventIn(BaseModel):
     event_type: str
@@ -24,20 +28,40 @@ class EventIn(BaseModel):
     payload: dict = {}
 
 
-async def authenticate_api_key(raw_key, db) -> ApiKey:
-    # authenticate the api key (from header)
-    if not raw_key:
-        raise HTTPException(status_code=400, detail="Missing X-API key")
+async def get_tenant_id_for_key_hash(
+    key_hash: str, db: AsyncSession
+) -> uuid.UUID | None:
+    cached = _api_key_cache.get(key_hash)
+    if cached is not None:
+        return cached
 
-    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+    logger.info("cache miss for api_key")
 
     result = await db.execute(
-        select(ApiKey).where(ApiKey.key_hash == key_hash, ApiKey.is_active.is_(True))
+        select(ApiKey.tenant_id).where(
+            ApiKey.key_hash == key_hash, ApiKey.is_active.is_(True)
+        )
     )
-    api_key = result.scalar_one_or_none()
-    if not api_key:
-        raise HTTPException(status_code=400, detail="Invalid X-API key")
-    return api_key
+    tenant_id = result.scalar_one_or_none()
+    if tenant_id is not None:
+        _api_key_cache[key_hash] = tenant_id
+    return tenant_id
+
+
+async def get_event_type_id(name: str, db: AsyncSession) -> uuid.UUID | None:
+    cached = _event_type_cache.get(name)
+    if cached is not None:
+        return cached
+
+    logger.info("cache miss for event_type")
+
+    # validate event type
+    result = await db.execute(select(EventType.id).where(EventType.name == name))
+    evt_type_id = result.scalar_one_or_none()
+    if evt_type_id is not None:
+        _event_type_cache[name] = evt_type_id
+
+    return evt_type_id
 
 
 @app.post("/events")
@@ -46,25 +70,19 @@ async def ingest_event(
     raw_key: str = Depends(api_key_header),
     db: AsyncSession = Depends(get_db),
 ):
-    api_key = await authenticate_api_key(raw_key, db)
+    logger.info("ingest_event")
+    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
     # get our tenant
-    tenant_id = api_key.tenant_id
-    # validate event type
-    result = await db.execute(
-        select(EventType).where(EventType.name == event.event_type)
-    )
-    evt_type = result.scalar_one_or_none()
-    if not evt_type:
-        raise HTTPException(
-            status_code=400, detail=f"Invalid event type: {event.event_type}"
-        )
+    tenant_id = await get_tenant_id_for_key_hash(key_hash, db)
+    logger.info(f"tenant_id: {tenant_id}")
     # use the server time if occurred_at is not provided
     occurred_at = event.occurred_at or datetime.now(timezone.utc)
 
+    evt_type_id = await get_event_type_id(event.event_type, db)
     # create the event in the db
     db_event = Event(
         tenant_id=tenant_id,
-        event_type=evt_type,
+        event_type_id=evt_type_id,
         occurred_at=occurred_at,
         entity_id=event.entity_id,
         payload_json=event.payload,
@@ -91,7 +109,9 @@ async def tenant_summary(
     db: AsyncSession = Depends(get_db),
 ):
 
-    _api_key = await authenticate_api_key(raw_key, db)
+    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+    # get our tenant
+    _tenant_id = await get_tenant_id_for_key_hash(key_hash, db)
 
     # read from daily_aggregate
     if summary_date is not None:

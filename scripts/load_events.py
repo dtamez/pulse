@@ -35,7 +35,7 @@ def make_event(i: int) -> dict:
 
 async def send_one(
     client: httpx.AsyncClient, api_key: str, i: int
-) -> tuple[bool, int | None]:
+) -> tuple[bool, int | str | None]:
     try:
         resp = await client.post(
             "/events",
@@ -43,8 +43,8 @@ async def send_one(
             json=make_event(i),
         )
         return resp.status_code == 200, resp.status_code
-    except Exception:
-        return False, None
+    except Exception as exc:
+        return False, type(exc).__name__
 
 
 async def worker(
@@ -61,9 +61,11 @@ async def worker(
         else:
             results["failure"] += 1
             if status is None:
-                results["status_exception"] += 1
-            else:
+                results["status_unknown"] += 1
+            elif isinstance(status, int):
                 results[f"status_{status}"] += 1
+            else:
+                results[f"exc_{status}"] += 1
 
 
 async def run_load(
@@ -82,7 +84,7 @@ async def run_load(
 
     async with httpx.AsyncClient(
         base_url=base_url,
-        timeout=10.0,
+        timeout=30.0,
         limits=limits,
     ) as client:
         tasks = []
@@ -100,17 +102,20 @@ async def run_load(
     elapsed = time.perf_counter() - start
     rps = total_requests / elapsed if elapsed else 0.0
 
-    print(f"Base URL:       {base_url}")
-    print(f"Total requests: {total_requests}")
-    print(f"Concurrency:    {concurrency}")
-    print(f"Elapsed:        {elapsed:.2f}s")
-    print(f"Requests/sec:   {rps:.2f}")
-    print(f"Success:        {results['success']}")
-    print(f"Failure:        {results['failure']}")
+    print(f"Base URL:          {base_url}")
+    print(f"Total requests:    {total_requests}")
+    print(f"Concurrency:       {concurrency}")
+    print(f"Elapsed:           {elapsed:.2f}s")
+    print(f"Requests/sec:      {rps:.2f}")
+    print(f"Success:           {results['success']}")
+    print(f"Failure:           {results['failure']}")
+    for k, v in results.items():
+        if k.startswith("status_"):
+            print(f"{k}:               {v}")
 
-    for key in sorted(results):
-        if key.startswith("status_"):
-            print(f"{key}: {results[key]}")
+    for k, v in results.items():
+        if k.startswith("exc"):
+            print(f"{k}:               {v}")
 
 
 def parse_args() -> argparse.Namespace:

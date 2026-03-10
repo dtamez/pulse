@@ -10,5 +10,11 @@ celery:
 docker-up:
 	docker compose up --build
 
+REQUESTS ?= 10000
+CONCURRENCY ?= 100
 load-events:
-	PYTHONPATH=. python scripts/load_events.py --api-key pulse_1a31b0c50a6f237f73159c653716fbdb --requests 10000 --concurrency 100
+	PYTHONPATH=. python scripts/load_events.py --api-key pulse_1a31b0c50a6f237f73159c653716fbdb --requests $(REQUESTS) --concurrency $(CONCURRENCY)
+
+NUM_EXPECTED ?= 500
+check-summary:
+	PYTHONPATH=. python scripts/check_tenant_summary.py --api-key pulse_1a31b0c50a6f237f73159c653716fbdb --tenant-id d34756c5-64d8-40cf-b2bd-5f844b53e80a --num-expected $(NUM_EXPECTED)
