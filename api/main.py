@@ -1,6 +1,7 @@
 import hashlib
 import uuid
 from datetime import date, datetime, timezone
+from time import perf_counter
 
 from fastapi import Depends, FastAPI
 from fastapi.security import APIKeyHeader
@@ -35,7 +36,7 @@ async def get_tenant_id_for_key_hash(
     if cached is not None:
         return cached
 
-    logger.info("cache miss for api_key")
+    logger.info("cache miss for api_key")  # ty: ignore
 
     result = await db.execute(
         select(ApiKey.tenant_id).where(
@@ -53,7 +54,7 @@ async def get_event_type_id(name: str, db: AsyncSession) -> uuid.UUID | None:
     if cached is not None:
         return cached
 
-    logger.info("cache miss for event_type")
+    logger.info("cache miss for event_type")  # ty: ignore
 
     # validate event type
     result = await db.execute(select(EventType.id).where(EventType.name == name))
@@ -70,15 +71,19 @@ async def ingest_event(
     raw_key: str = Depends(api_key_header),
     db: AsyncSession = Depends(get_db),
 ):
-    logger.info("ingest_event")
+    t0 = perf_counter()
+    logger.info("ingest_event")  # ty: ignore
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
     # get our tenant
     tenant_id = await get_tenant_id_for_key_hash(key_hash, db)
-    logger.info(f"tenant_id: {tenant_id}")
+    t1 = perf_counter()
+    logger.info(f"tenant_id: {tenant_id}")  # ty: ignore
     # use the server time if occurred_at is not provided
     occurred_at = event.occurred_at or datetime.now(timezone.utc)
 
     evt_type_id = await get_event_type_id(event.event_type, db)
+    t2 = perf_counter()
+
     # create the event in the db
     db_event = Event(
         tenant_id=tenant_id,
@@ -88,8 +93,20 @@ async def ingest_event(
         payload_json=event.payload,
     )
     db.add(db_event)
+    t3 = perf_counter()
     await db.commit()
+    t4 = perf_counter()
     await db.refresh(db_event)
+    t5 = perf_counter()
+
+    print(
+        f"timing auth={t1 - t0:.4f}s "
+        f"evt_type={t2 - t1:.4f}s "
+        f"add={t3 - t2:.4f}s "
+        f"commit={t4 - t3:.4f}s "
+        f"refresh={t5 - t4:.4f}s "
+        f"total={t5 - t0:.4f}s"
+    )
 
     # celery task to update aggregates
     aggregate_event.delay(str(db_event.id))
