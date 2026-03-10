@@ -1,4 +1,6 @@
 from logzero import logger
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 
 from core.database import sync_session
 from core.models import DailyAggregate, Event
@@ -15,22 +17,25 @@ def aggregate_event_impl(event_id: str) -> None:
         # strip time off of occurred_at
         aggregate_date = event.occurred_at.date()
 
-        # does a DailyAggregate matching this tenant_id, event_type_id, and date exist?
-        daily = db.get(
-            DailyAggregate, (event.tenant_id, event.event_type_id, aggregate_date)
+        # fix race condition
+        stmt = insert(DailyAggregate).values(
+            tenant_id=event.tenant_id,
+            event_type_id=event.event_type_id,
+            aggregate_date=aggregate_date,
+            event_count=1,
         )
 
-        # if so update it with a +1 to event_count
-        if daily is not None:
-            daily.event_count += 1
-        else:
-            # if not create with an event_count of 1
-            daily = DailyAggregate(
-                tenant_id=event.tenant_id,
-                event_type_id=event.event_type_id,
-                aggregate_date=aggregate_date,
-                event_count=1,
-            )
-            db.add(daily)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[
+                DailyAggregate.tenant_id,
+                DailyAggregate.event_type_id,
+                DailyAggregate.aggregate_date,
+            ],
+            # increment atomically
+            set_={
+                "event_count": DailyAggregate.event_count + 1,
+            },
+        )
 
+        db.execute(stmt)
         db.commit()
