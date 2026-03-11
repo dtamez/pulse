@@ -10,10 +10,13 @@ celery:
 docker-up:
 	docker compose up --build
 
+bootstrap:
+	docker compose exec api python scripts/bootstrap.py
+
 REQUESTS ?= 10000
 CONCURRENCY ?= 100
 load-events:
-	PYTHONPATH=. python scripts/load_events.py --api-key pulse_1a31b0c50a6f237f73159c653716fbdb --requests $(REQUESTS) --concurrency $(CONCURRENCY)
+	PYTHONPATH=. python scripts/load_events.py --requests $(REQUESTS) --concurrency $(CONCURRENCY)
 
 NUM_EXPECTED ?= 500
 check-summary:

@@ -36,13 +36,14 @@ async def get_tenant_id_for_key_hash(
     if cached is not None:
         return cached
 
-    logger.info("cache miss for api_key")  # ty: ignore
-
+    t1 = perf_counter()
     result = await db.execute(
         select(ApiKey.tenant_id).where(
             ApiKey.key_hash == key_hash, ApiKey.is_active.is_(True)
         )
     )
+    t2 = perf_counter()
+    logger.info("AUTH TIME: ", t2 - t1)
     tenant_id = result.scalar_one_or_none()
     if tenant_id is not None:
         _api_key_cache[key_hash] = tenant_id
@@ -54,11 +55,13 @@ async def get_event_type_id(name: str, db: AsyncSession) -> uuid.UUID | None:
     if cached is not None:
         return cached
 
-    logger.info("cache miss for event_type")  # ty: ignore
-
     # validate event type
+    t1 = perf_counter()
     result = await db.execute(select(EventType.id).where(EventType.name == name))
+    t2 = perf_counter()
     evt_type_id = result.scalar_one_or_none()
+    t3 = perf_counter()
+    logger.info(f"EVENT TIME execute: {t2 - t1}, scalar: {t3 - t2}")
     if evt_type_id is not None:
         _event_type_cache[name] = evt_type_id
 
@@ -71,18 +74,15 @@ async def ingest_event(
     raw_key: str = Depends(api_key_header),
     db: AsyncSession = Depends(get_db),
 ):
-    t0 = perf_counter()
     logger.info("ingest_event")  # ty: ignore
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
     # get our tenant
     tenant_id = await get_tenant_id_for_key_hash(key_hash, db)
-    t1 = perf_counter()
     logger.info(f"tenant_id: {tenant_id}")  # ty: ignore
     # use the server time if occurred_at is not provided
     occurred_at = event.occurred_at or datetime.now(timezone.utc)
 
     evt_type_id = await get_event_type_id(event.event_type, db)
-    t2 = perf_counter()
 
     # create the event in the db
     db_event = Event(
@@ -92,24 +92,18 @@ async def ingest_event(
         entity_id=event.entity_id,
         payload_json=event.payload,
     )
+    t1 = perf_counter()
     db.add(db_event)
+    t2 = perf_counter()
     await db.flush()
     t3 = perf_counter()
     event_id = str(db_event.id)
     await db.commit()
     t4 = perf_counter()
 
-    print(
-        f"timing auth={t1 - t0:.4f}s "
-        f"evt_type={t2 - t1:.4f}s "
-        f"add/flush={t3 - t2:.4f}s "
-        f"commit={t4 - t3:.4f}s "
-        f"total={t4 - t0:.4f}s"
-    )
-
     # celery task to update aggregates
     aggregate_event.delay(str(event_id))
-
+    logger.info(f"event add: {t2 - t1}, flush: {t3 - t2}, commit: {t4 - t3}")
     # return status and event id
     return {
         "status": "accepted",

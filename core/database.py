@@ -21,9 +21,11 @@ def _build_async_engine():
     if settings.TESTING:
         kwargs["poolclass"] = NullPool
     else:
-        kwargs["pool_size"] = 20
-        kwargs["max_overflow"] = 40
+        kwargs["pool_size"] = 5
+        kwargs["max_overflow"] = 0
         kwargs["pool_timeout"] = 30
+        kwargs["pool_pre_ping"] = True
+        kwargs["echo_pool"] = "debug"
     return create_async_engine(settings.ASYNC_DATABASE_URL, **kwargs)
 
 
@@ -32,9 +34,11 @@ def _build_sync_engine():
     if settings.TESTING:
         kwargs["poolclass"] = NullPool
     else:
-        kwargs["pool_size"] = 20
-        kwargs["max_overflow"] = 40
+        kwargs["pool_size"] = 5
+        kwargs["max_overflow"] = 0
         kwargs["pool_timeout"] = 30
+        kwargs["pool_pre_ping"] = True
+        kwargs["echo_pool"] = "debug"
     return create_engine(settings.SYNC_DATABASE_URL, **kwargs)
 
 

@@ -1,6 +1,6 @@
 import argparse
 import time
-from datetime import datetime
+from time import perf_counter
 
 import httpx
 
@@ -8,7 +8,7 @@ import httpx
 def check_num_processed_in_tenant_summary(
     base_url: str, api_key: str, tenant_id: str, num_expected: int
 ):
-    start: datetime = datetime.now()
+    t0 = perf_counter()
     client = httpx.Client(base_url=base_url)
     num_collected: int = 0
     while num_collected < num_expected:
@@ -21,8 +21,8 @@ def check_num_processed_in_tenant_summary(
         print(num_collected)
         time.sleep(1)
 
-    stop: datetime = datetime.now()
-    print(f"elapsed time: {stop - start}")
+    t1 = perf_counter()
+    print(f"elapsed time: {t1 - t0}")
 
 
 def parse_args() -> argparse.Namespace:
