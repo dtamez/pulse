@@ -4,7 +4,7 @@ import secrets
 
 from sqlalchemy import select
 
-from core.database import async_session
+from core.database import async_db_session
 from core.models import ApiKey, Tenant
 
 raw_keys = {}
@@ -33,9 +33,18 @@ tenants = [
 ]
 
 
+def shard_for_tenant_key(external_key: str) -> str:
+    return f"shard{hash(external_key) % 2}"
+
+
 async def bootstrap():
-    async with async_session() as session:
-        for tenant in tenants:
+    raw_keys = {}
+
+    for tenant in tenants:
+        # get the right db
+        shard_name = shard_for_tenant_key(tenant.external_key)
+
+        async with async_db_session(shard_name) as session:
             # skip if tenant already exists
             existing = await session.scalar(
                 select(Tenant).where(Tenant.external_key == tenant.external_key)
@@ -58,10 +67,10 @@ async def bootstrap():
                 )
             )
 
+            await session.commit()
+
             raw_keys[tenant.external_key] = raw_key
             print(f"Created tenant: {tenant.external_key}")
-
-        await session.commit()
 
     print(raw_keys)
 

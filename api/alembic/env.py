@@ -1,11 +1,9 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
 
 from core import models
-from core.config import settings
-from core.database import Base
+from core.database import SYNC_ENGINES, Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -26,8 +24,8 @@ target_metadata = Base.metadata
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
 # ... etc.
-syncronous_db_url = settings.SYNC_DATABASE_URL
-config.set_main_option("sqlalchemy.url", syncronous_db_url)
+
+SHARD_NAMES = ["shard0", "shard1"]
 
 
 def run_migrations_offline() -> None:
@@ -42,16 +40,17 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
-    context.configure(
-        url=url,
-        target_metadata=target_metadata,
-        literal_binds=True,
-        dialect_opts={"paramstyle": "named"},
-    )
 
-    with context.begin_transaction():
-        context.run_migrations()
+    for shard_name in SHARD_NAMES:
+        print(f"Running migrations on {shard_name}")
+        engine = SYNC_ENGINES[shard_name]
+
+        with engine.begin() as connection:
+            context.configure(
+                connection=connection,
+                target_metadata=target_metadata,
+            )
+            context.run_migrations()
 
 
 def run_migrations_online() -> None:
@@ -61,16 +60,15 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    for shard_name in SHARD_NAMES:
+        print(f"Running migrations on {shard_name}")
+        engine = SYNC_ENGINES[shard_name]
 
-    with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
-
-        with context.begin_transaction():
+        with engine.begin() as connection:
+            context.configure(
+                connection=connection,
+                target_metadata=target_metadata,
+            )
             context.run_migrations()
 
 

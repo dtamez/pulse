@@ -1,6 +1,6 @@
 import hashlib
 from collections.abc import AsyncGenerator, Generator
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 
 from fastapi import Depends, HTTPException
 from fastapi.security import APIKeyHeader
@@ -43,13 +43,13 @@ def _build_sync_engine(url: str):
 
 
 ASYNC_ENGINES = {
+    "shard0": _build_async_engine(settings.ASYNC_DATABASE_SHARD0_URL),
     "shard1": _build_async_engine(settings.ASYNC_DATABASE_SHARD1_URL),
-    "shard2": _build_async_engine(settings.ASYNC_DATABASE_SHARD2_URL),
 }
 
 SYNC_ENGINES = {
+    "shard0": _build_sync_engine(settings.SYNC_DATABASE_SHARD0_URL),
     "shard1": _build_sync_engine(settings.SYNC_DATABASE_SHARD1_URL),
-    "shard2": _build_sync_engine(settings.SYNC_DATABASE_SHARD2_URL),
 }
 
 ASYNC_SESSIONMAKERS = {
@@ -66,7 +66,7 @@ SYNC_SESSIONMAKERS = {
 def shard_for_tenant(external_key: str) -> str:
     digest = hashlib.sha256(external_key.encode("utf-8")).hexdigest()
     shard_num = int(digest, 16) % 2
-    return "shard1" if shard_num == 0 else "shard2"
+    return "shard0" if shard_num == 0 else "shard1"
 
 
 async def get_shard_name(raw_key: str = Depends(api_key_header)) -> str:
@@ -99,3 +99,13 @@ def get_sync_db(shard_name) -> Generator[Session, None, None]:
         raise
     finally:
         session.close()
+
+
+@asynccontextmanager
+async def async_db_session(shard_name: str) -> AsyncGenerator[AsyncSession, None]:
+    async with ASYNC_SESSIONMAKERS[shard_name]() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
