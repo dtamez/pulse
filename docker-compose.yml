@@ -12,7 +12,8 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - postgres
+      - postgres_shard1
+      - postgres_shard2
       - redis 
 
   worker:
@@ -23,17 +24,32 @@ services:
     environment:
       PYTHONPATH: /app 
     depends_on:
-      - postgres
+      - postgres_shard1
+      - postgres_shard2
       - redis 
 
-  postgres:
+  postgres_shard1:
     image: postgres:16
     env_file:
       - .env.docker
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_shard1_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s 
+      timeout: 5s 
+      retries: 5
+
+  postgres_shard2:
+    image: postgres:16
+    env_file:
+      - .env.docker
+    volumes:
+      - postgres_shard2_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5433"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s 
@@ -46,4 +62,5 @@ services:
       - "6379:6379"
 
 volumes:
-  postgres_data:
+  postgres_shard1_data:
+  postgres_shard2_data:

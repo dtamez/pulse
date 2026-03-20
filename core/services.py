@@ -1,15 +1,14 @@
 from logzero import logger
-from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
-from core.database import sync_session
+from core.database import get_sync_db
 from core.models import DailyAggregate, Event
 
 
-def aggregate_event_impl(event_id: str) -> None:
+def aggregate_event_impl(event_id: str, shard_name: str) -> None:
     # use synchronous db calls for celery tasks
-    with sync_session() as db:
-        logger.info("AGGREGATE_EVENT_IMPL")
+    with get_sync_db(shard_name) as db:
+        logger.info("AGGREGATE_EVENT_IMPL")  # ty: ignore
         event = db.get(Event, event_id)
         if event is None:
             return

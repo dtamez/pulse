@@ -1,7 +1,6 @@
 import hashlib
 import uuid
 from datetime import date, datetime, timezone
-from time import perf_counter
 
 from fastapi import Depends, FastAPI
 from fastapi.security import APIKeyHeader
@@ -11,7 +10,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from core.database import get_db
+from core.database import get_db, shard_for_tenant
 from core.models import ApiKey, DailyAggregate, Event, EventType
 from worker.tasks import aggregate_event
 
@@ -36,14 +35,11 @@ async def get_tenant_id_for_key_hash(
     if cached is not None:
         return cached
 
-    t1 = perf_counter()
     result = await db.execute(
         select(ApiKey.tenant_id).where(
             ApiKey.key_hash == key_hash, ApiKey.is_active.is_(True)
         )
     )
-    t2 = perf_counter()
-    logger.info("AUTH TIME: ", t2 - t1)
     tenant_id = result.scalar_one_or_none()
     if tenant_id is not None:
         _api_key_cache[key_hash] = tenant_id
@@ -56,12 +52,8 @@ async def get_event_type_id(name: str, db: AsyncSession) -> uuid.UUID | None:
         return cached
 
     # validate event type
-    t1 = perf_counter()
     result = await db.execute(select(EventType.id).where(EventType.name == name))
-    t2 = perf_counter()
     evt_type_id = result.scalar_one_or_none()
-    t3 = perf_counter()
-    logger.info(f"EVENT TIME execute: {t2 - t1}, scalar: {t3 - t2}")
     if evt_type_id is not None:
         _event_type_cache[name] = evt_type_id
 
@@ -78,7 +70,6 @@ async def ingest_event(
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
     # get our tenant
     tenant_id = await get_tenant_id_for_key_hash(key_hash, db)
-    logger.info(f"tenant_id: {tenant_id}")  # ty: ignore
     # use the server time if occurred_at is not provided
     occurred_at = event.occurred_at or datetime.now(timezone.utc)
 
@@ -92,18 +83,14 @@ async def ingest_event(
         entity_id=event.entity_id,
         payload_json=event.payload,
     )
-    t1 = perf_counter()
     db.add(db_event)
-    t2 = perf_counter()
     await db.flush()
-    t3 = perf_counter()
     event_id = str(db_event.id)
     await db.commit()
-    t4 = perf_counter()
 
     # celery task to update aggregates
-    aggregate_event.delay(str(event_id))
-    logger.info(f"event add: {t2 - t1}, flush: {t3 - t2}, commit: {t4 - t3}")
+    shard_name = shard_for_tenant(raw_key)
+    aggregate_event.delay(str(event_id), shard_name)
     # return status and event id
     return {
         "status": "accepted",
