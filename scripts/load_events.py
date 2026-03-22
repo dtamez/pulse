@@ -17,27 +17,28 @@ EVENT_TYPE_WEIGHTS = [70, 10, 8, 8, 4]
 ENDPOINTS = ["/search", "/create_invoice", "/login", "/checkout", "/reports/daily"]
 
 TENANT_KEYS = [
-    "pulse_0c2e60c347e68f71a695121afd114775",  # wacky
-    "pulse_81d76a4f0e3abb833934b50c1ece425c",  # quirky
-    "pulse_50fbe81732d7d76d96ff0be129d144cc",  # silly
-    "pulse_9ecd384e7b569738f60b2c8f11625ce6",  # cheesy
-    "pulse_d39e764c7e37e5575eb2fdaface6787a",  # merry
-    "pulse_f704654d11d7366f59baf04dc5a507dc",  # loony
-    "pulse_efdb3de44a11f9b7da52f2e3ff22747c",  # zany
-    "pulse_98fdadfb6ece433069825756a2932c19",  # giggle
-    "pulse_daba081aaea1c17a0e216b2c881c99f2",  # doodle
-    "pulse_8e5c310713865b499bb6d44bcd86ff5a",  # smiley
-    "pulse_cdf58e62445c7ba94415bcd2130f3d23",  # happy
-    "pulse_62abb931c8e199a459f1a832b7f638c3",  # bubbly
-    "pulse_aea658ad58c8b3383097a367b6c06340",  # jolly
-    "pulse_d074cc6a6edcbaf432f35b9d3ce37be8",  # bouncing
-    "pulse_dfcfe1a687c9d8ed74eda923a7259004",  # whimsical
-    "pulse_8cbecd37c08975266aa3d3c1688a3a6f",  # funky
-    "pulse_e09bd3ae9b55d4fb3920044eeebf3198",  # cozy
-    "pulse_32976d83a8ee0b8542f75799020f18ce",  # sunshine
-    "pulse_3916d3f046b16daf4735a76b3559e2c0",  # nutty
-    "pulse_fda7c479e48391423e2ab67d068f33ad",  # playful
+    "pulse_1426de9b73afbdf90d04e44ce2705430",  # "bouncing"
+    "pulse_f63b083771115c31a732a03b960e307c",  # "bubbly"
+    "pulse_edf51a11433b7f19533f80a3f7f613b7",  # "cheesy"
+    "pulse_ea4be70d0666c32a755f3dfdb3d42948",  # "cozy"
+    "pulse_3b275c64160c497fec6b73d68a5a05e3",  # "doodle"
+    "pulse_bd17df91b1f7eb0a7a1b005dd6d2654c",  # "funky"
+    "pulse_ca99a698c651aa515321639f8a628e7c",  # "giggle"
+    "pulse_6bc049fa18a9abf7ef41e03bb59bcbdb",  # "happy"
+    "pulse_3b7e74a3bd8ddbd9c94f52234e3e5a59",  # "jolly"
+    "pulse_0c31317a79b40085458ab628f0f7d10c",  # "loony"
+    "pulse_de3b020c2ad526cd39d2d3d716d4265d",  # "merry"
+    "pulse_4054c261a5c864be50efb928f763ff96",  # "nutty"
+    "pulse_1ac86d7a6b7e9dda383fe91f834c05f4",  # "playful"
+    "pulse_f32801caafd5c478b7915e73ee257554",  # "quirky"
+    "pulse_c8a2917671a037097496a06c74b6fd16",  # "silly"
+    "pulse_587020937403dfbbc71dc351122fe795",  # "smiley"
+    "pulse_d2287aa83dfd50e1a727ee0a384495f2",  # "sunshine"
+    "pulse_54ba295f18ed220a9f6cedfcfbf4724a",  # "wacky"
+    "pulse_40553c1e3b0e0f7ac1926ee264454054",  # "whimsical"
+    "pulse_9bc183f33fb115d60fe0a5b20634019c",  # "zany"
 ]
+
 
 TENANT_WEIGHTS = [5, 5, 5, 20, 2, 10, 3, 35, 3, 4, 2, 35, 7, 3, 4, 3, 5, 6, 2, 4]
 
@@ -96,7 +97,7 @@ async def send_one(
     api_key: str,
     i: int,
     rng: random.Random,
-) -> tuple[bool, int | str, float]:
+) -> tuple[bool, int | str, float, str | None]:
     started = time.perf_counter()
     try:
         resp = await client.post(
@@ -105,10 +106,18 @@ async def send_one(
             json=make_event(i, rng),
         )
         elapsed_ms = (time.perf_counter() - started) * 1000
-        return resp.status_code == 200, resp.status_code, elapsed_ms
+
+        error_detail = None
+        if resp.status_code != 200:
+            try:
+                error_detail = resp.text
+            except Exception:
+                error_detail = "<unable to read response body>"
+
+        return resp.status_code == 200, resp.status_code, elapsed_ms, error_detail
     except Exception as exc:
         elapsed_ms = (time.perf_counter() - started) * 1000
-        return False, type(exc).__name__, elapsed_ms
+        return False, type(exc).__name__, elapsed_ms, str(exc)
 
 
 async def worker(
@@ -123,6 +132,7 @@ async def worker(
     rng = random.Random(seed + worker_id)
     stats: Counter[str] = Counter()
     latencies_ms: list[float] = []
+    sample_errors: list[str] = []
 
     for i in range(start_idx, start_idx + count):
         api_key = pick_tenant(
@@ -132,7 +142,7 @@ async def worker(
             request_index=i,
         )
 
-        ok, status, elapsed_ms = await send_one(client, api_key, i, rng)
+        ok, status, elapsed_ms, error_detail = await send_one(client, api_key, i, rng)
         latencies_ms.append(elapsed_ms)
 
         stats["success" if ok else "failure"] += 1
@@ -140,26 +150,37 @@ async def worker(
 
         if isinstance(status, int):
             stats[f"status::{status}"] += 1
+            if not ok and error_detail and len(sample_errors) < 5:
+                sample_errors.append(
+                    f"request={i} tenant={api_key} status={status} body={error_detail}"
+                )
         else:
             stats[f"exc::{status}"] += 1
+            if error_detail and len(sample_errors) < 5:
+                sample_errors.append(
+                    f"request={i} tenant={api_key} exception={status} detail={error_detail}"
+                )
 
     return {
         "stats": stats,
         "latencies_ms": latencies_ms,
+        "sample_errors": sample_errors,
     }
 
 
 def merge_worker_results(
     worker_results: list[dict[str, Any]],
-) -> tuple[Counter[str], list[float]]:
+) -> tuple[Counter[str], list[float], list[str]]:
     merged: Counter[str] = Counter()
     latencies_ms: list[float] = []
+    sample_errors: list[str] = []
 
     for result in worker_results:
         merged.update(result["stats"])
         latencies_ms.extend(result["latencies_ms"])
+        sample_errors.extend(result["sample_errors"])
 
-    return merged, latencies_ms
+    return merged, latencies_ms, sample_errors[:10]
 
 
 def summarize_latencies(latencies_ms: list[float]) -> dict[str, float]:
@@ -293,7 +314,7 @@ async def run_load(
         worker_results = await asyncio.gather(*tasks)
 
     elapsed_s = time.perf_counter() - started
-    stats, latencies_ms = merge_worker_results(worker_results)
+    stats, latencies_ms, sample_errors = merge_worker_results(worker_results)
     latency = summarize_latencies(latencies_ms)
     success = stats["success"]
     failure = stats["failure"]
@@ -319,6 +340,12 @@ async def run_load(
     print(f"  p99:              {latency['p99_ms']:.2f} ms")
     print(f"  max:              {latency['max_ms']:.2f} ms")
     print()
+
+    if sample_errors:
+        print()
+        print("Sample errors")
+        for err in sample_errors:
+            print(f"  {err}")
 
     print("Top status counts")
     print_top_counts(stats, "status::", top_n)

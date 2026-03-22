@@ -2,8 +2,6 @@ import hashlib
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
 
-from fastapi import Depends, HTTPException
-from fastapi.security import APIKeyHeader
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -15,7 +13,12 @@ from sqlalchemy.pool import NullPool
 
 from core.config import settings
 
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=True)
+
+def shard_for_tenant(external_key: str) -> str:
+    digest = hashlib.sha256(external_key.encode("utf-8")).hexdigest()
+    shard_num = int(digest, 16) % 2
+    answer = "shard0" if shard_num == 0 else "shard1"
+    return answer
 
 
 class Base(DeclarativeBase):
@@ -62,31 +65,23 @@ SYNC_SESSIONMAKERS = {
     for shard_name, engine in SYNC_ENGINES.items()
 }
 
+print("ASYNC shard mapping:")
+for name, engine in ASYNC_ENGINES.items():
+    print(name, engine.url)
 
-def shard_for_tenant(external_key: str) -> str:
-    digest = hashlib.sha256(external_key.encode("utf-8")).hexdigest()
-    shard_num = int(digest, 16) % 2
-    return "shard0" if shard_num == 0 else "shard1"
-
-
-async def get_shard_name(raw_key: str = Depends(api_key_header)) -> str:
-    # lookup tenant / shard from api key
-    shard_name = shard_for_tenant(raw_key)
-    if shard_name not in ASYNC_SESSIONMAKERS:
-        raise HTTPException(status_code=500, detail="Invalid shard")
-    return shard_name
+print("SYNC shard mapping:")
+for name, engine in SYNC_ENGINES.items():
+    print(name, engine.url)
 
 
-async def get_db(shard_name):
-    async def _get_db() -> AsyncGenerator[AsyncSession, None]:
-        async with ASYNC_SESSIONMAKERS[shard_name]() as session:
-            try:
-                yield session
-            except Exception:
-                await session.rollback()
-                raise
-
-    return _get_db
+@asynccontextmanager
+async def async_db_session(shard_name: str) -> AsyncGenerator[AsyncSession, None]:
+    async with ASYNC_SESSIONMAKERS[shard_name]() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
 
 
 @contextmanager
@@ -99,13 +94,3 @@ def get_sync_db(shard_name) -> Generator[Session, None, None]:
         raise
     finally:
         session.close()
-
-
-@asynccontextmanager
-async def async_db_session(shard_name: str) -> AsyncGenerator[AsyncSession, None]:
-    async with ASYNC_SESSIONMAKERS[shard_name]() as session:
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise

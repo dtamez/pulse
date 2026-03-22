@@ -10,15 +10,19 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from core.database import get_db, shard_for_tenant
-from core.models import ApiKey, DailyAggregate, Event, EventType
+from core.database import shard_for_tenant
+from core.deps import (
+    RequestTenantContext,
+    _event_type_cache,
+    get_request_db,
+    get_tenant_context,
+    get_tenant_id_for_key_hash,
+)
+from core.models import DailyAggregate, Event, EventType
 from worker.tasks import aggregate_event
 
 app = FastAPI()
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=True)
-
-_event_type_cache: dict[str, uuid.UUID] = {}
-_api_key_cache: dict[str, uuid.UUID] = {}
 
 
 class EventIn(BaseModel):
@@ -26,24 +30,6 @@ class EventIn(BaseModel):
     entity_id: str | None = None
     occurred_at: datetime | None = None
     payload: dict = {}
-
-
-async def get_tenant_id_for_key_hash(
-    key_hash: str, db: AsyncSession
-) -> uuid.UUID | None:
-    cached = _api_key_cache.get(key_hash)
-    if cached is not None:
-        return cached
-
-    result = await db.execute(
-        select(ApiKey.tenant_id).where(
-            ApiKey.key_hash == key_hash, ApiKey.is_active.is_(True)
-        )
-    )
-    tenant_id = result.scalar_one_or_none()
-    if tenant_id is not None:
-        _api_key_cache[key_hash] = tenant_id
-    return tenant_id
 
 
 async def get_event_type_id(name: str, db: AsyncSession) -> uuid.UUID | None:
@@ -63,13 +49,11 @@ async def get_event_type_id(name: str, db: AsyncSession) -> uuid.UUID | None:
 @app.post("/events")
 async def ingest_event(
     event: EventIn,
-    raw_key: str = Depends(api_key_header),
-    db: AsyncSession = Depends(get_db),
+    ctx: RequestTenantContext = Depends(get_tenant_context),
+    db: AsyncSession = Depends(get_request_db),
 ):
-    logger.info("ingest_event")  # ty: ignore
-    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-    # get our tenant
-    tenant_id = await get_tenant_id_for_key_hash(key_hash, db)
+    logger.info(f"top of /events, ctx has: {ctx}")
+    tenant_id = ctx.tenant_id
     # use the server time if occurred_at is not provided
     occurred_at = event.occurred_at or datetime.now(timezone.utc)
 
@@ -89,7 +73,9 @@ async def ingest_event(
     await db.commit()
 
     # celery task to update aggregates
-    shard_name = shard_for_tenant(raw_key)
+    logger.info("About to call shard_for_tenant")
+    logger.info(f"ctx: {ctx}")
+    shard_name = shard_for_tenant(ctx.external_key)
     aggregate_event.delay(str(event_id), shard_name)
     # return status and event id
     return {
@@ -103,7 +89,7 @@ async def tenant_summary(
     tenant_id: uuid.UUID,
     summary_date: date | None = None,
     raw_key: str = Depends(api_key_header),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_request_db),
 ):
 
     key_hash = hashlib.sha256(raw_key.encode()).hexdigest()

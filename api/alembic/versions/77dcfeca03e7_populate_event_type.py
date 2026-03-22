@@ -6,7 +6,6 @@ Create Date: 2026-03-06 21:00:06.686781
 
 """
 
-import uuid
 from typing import Sequence, Union
 
 from alembic import op
@@ -25,16 +24,36 @@ def upgrade() -> None:
     op.bulk_insert(
         EventType.__table__,
         [
-            {"id": uuid.uuid4(), "name": "api_call", "description": "API Call"},
-            {"id": uuid.uuid4(), "name": "page_view", "description": "Page View"},
-            {"id": uuid.uuid4(), "name": "job_started", "description": "Job Started"},
             {
-                "id": uuid.uuid4(),
+                "id": "11111111-1111-1111-1111-111111111111",
+                "name": "api_call",
+                "description": "API Call",
+            },
+            {
+                "id": "22222222-2222-2222-2222-222222222222",
+                "name": "page_view",
+                "description": "Page View",
+            },
+            {
+                "id": "33333333-3333-3333-3333-333333333333",
+                "name": "job_started",
+                "description": "Job Started",
+            },
+            {
+                "id": "44444444-4444-4444-4444-444444444444",
                 "name": "job_completed",
                 "description": "Job Completed",
             },
-            {"id": uuid.uuid4(), "name": "job_failed", "description": "Job Failed"},
-            {"id": uuid.uuid4(), "name": "purchase", "description": "Purchase"},
+            {
+                "id": "55555555-5555-5555-5555-555555555555",
+                "name": "job_failed",
+                "description": "Job Failed",
+            },
+            {
+                "id": "66666666-6666-6666-6666-666666666666",
+                "name": "purchase",
+                "description": "Purchase",
+            },
         ],
     )
 

@@ -2,47 +2,46 @@ import asyncio
 import hashlib
 import secrets
 
+from logzero import logger
 from sqlalchemy import select
 
-from core.database import async_db_session
+from core.database import async_db_session, shard_for_tenant
 from core.models import ApiKey, Tenant
 
 raw_keys = {}
 
 tenants = [
-    Tenant(external_key="wacky", name="Wacky Widgets"),
-    Tenant(external_key="quirky", name="Quirky Quokkas"),
-    Tenant(external_key="silly", name="Silly Snacks"),
-    Tenant(external_key="cheesy", name="Cheesy Churros"),
-    Tenant(external_key="merry", name="Merry Milkshakes"),
-    Tenant(external_key="loony", name="Loony Llamas"),
-    Tenant(external_key="zany", name="Zany Zucchini"),
-    Tenant(external_key="giggle", name="Giggle Gadgets"),
-    Tenant(external_key="doodle", name="Doodle Doughnuts"),
-    Tenant(external_key="smiley", name="Smiley Soft Drinks"),
-    Tenant(external_key="happy", name="Happy Hiccups"),
-    Tenant(external_key="bubbly", name="Bubbly Bottles"),
-    Tenant(external_key="jolly", name="Jolly Jellyfish"),
     Tenant(external_key="bouncing", name="Bouncing Bubbles"),
-    Tenant(external_key="whimsical", name="Whimsical Waffles"),
-    Tenant(external_key="funky", name="Funky Furballs"),
+    Tenant(external_key="bubbly", name="Bubbly Bottles"),
+    Tenant(external_key="cheesy", name="Cheesy Churros"),
     Tenant(external_key="cozy", name="Cozy Coozies"),
-    Tenant(external_key="sunshine", name="Sunshine Sweets"),
+    Tenant(external_key="doodle", name="Doodle Doughnuts"),
+    Tenant(external_key="funky", name="Funky Furballs"),
+    Tenant(external_key="giggle", name="Giggle Gadgets"),
+    Tenant(external_key="happy", name="Happy Hiccups"),
+    Tenant(external_key="jolly", name="Jolly Jellyfish"),
+    Tenant(external_key="loony", name="Loony Llamas"),
+    Tenant(external_key="merry", name="Merry Milkshakes"),
     Tenant(external_key="nutty", name="Nutty Nuggets"),
     Tenant(external_key="playful", name="Playful Pies"),
+    Tenant(external_key="quirky", name="Quirky Quokkas"),
+    Tenant(external_key="silly", name="Silly Snacks"),
+    Tenant(external_key="smiley", name="Smiley Soft Drinks"),
+    Tenant(external_key="sunshine", name="Sunshine Sweets"),
+    Tenant(external_key="wacky", name="Wacky Widgets"),
+    Tenant(external_key="whimsical", name="Whimsical Waffles"),
+    Tenant(external_key="zany", name="Zany Zucchini"),
 ]
-
-
-def shard_for_tenant_key(external_key: str) -> str:
-    return f"shard{hash(external_key) % 2}"
 
 
 async def bootstrap():
     raw_keys = {}
 
     for tenant in tenants:
+        logger.info(f"starting tenant: {tenant.name}")  # ty: ignore
         # get the right db
-        shard_name = shard_for_tenant_key(tenant.external_key)
+        shard_name = shard_for_tenant(tenant.external_key)
+        logger.info(f"shard: {shard_name} for tenant: {tenant.external_key}")  # ty: ignore
 
         async with async_db_session(shard_name) as session:
             # skip if tenant already exists
@@ -70,7 +69,7 @@ async def bootstrap():
             await session.commit()
 
             raw_keys[tenant.external_key] = raw_key
-            print(f"Created tenant: {tenant.external_key}")
+            print(f"Created tenant: {tenant.external_key} on shard {shard_name}")
 
     print(raw_keys)
 
