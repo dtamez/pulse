@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pulse-config
+  namespace: pulse
+data:
+  PYTHONPATH: "/app"
+  REDIS_HOST: "redis"
+  POSTGRES_SHARD0_HOST: "postgres-shard0"
+  POSTGRES_SHARD1_HOST: "postgres-shard1"

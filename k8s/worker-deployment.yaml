@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pulse-worker
+  namespace: pulse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pulse-worker
+  template:
+    metadata:
+      labels:
+        app: pulse-worker
+    spec:
+      containers:
+        - name: worker
+          image: pulse-app:latest
+          imagePullPolicy: IfNotPresent
+          command: ["celery"]
+          args:
+            - "-A"
+            - "worker.app.celery_app"
+            - "worker"
+            - "-l"
+            - "info"
+          envFrom:
+            - configMapRef:
+                name: pulse-config
+            - secretRef:
+                name: pulse-secrets

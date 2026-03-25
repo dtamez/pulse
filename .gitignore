@@ -13,4 +13,4 @@ wheels/
 .env 
 .env.test
 .env.docker
-
+.env.kubernetes
