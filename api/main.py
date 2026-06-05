@@ -5,6 +5,7 @@ from datetime import date, datetime, timezone
 from fastapi import Depends, FastAPI
 from fastapi.security import APIKeyHeader
 from logzero import logger
+from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +24,7 @@ from worker.tasks import aggregate_event
 
 app = FastAPI()
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=True)
+Instrumentator().instrument(app).expose(app)
 
 
 class EventIn(BaseModel):
