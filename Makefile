@@ -13,8 +13,8 @@ docker-up:
 bootstrap:
 	docker compose exec api python scripts/bootstrap.py
 
-REQUESTS ?= 10000
-CONCURRENCY ?= 100
+REQUESTS ?= 500
+CONCURRENCY ?= 5
 load-events:
 	PYTHONPATH=. python scripts/load_events.py --requests $(REQUESTS) --concurrency $(CONCURRENCY)
 
