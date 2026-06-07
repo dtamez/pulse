@@ -10,3 +10,7 @@ celery_app = Celery(
 
 celery_app.conf.task_default_queue = "pulse"
 celery_app.autodiscover_tasks(["worker"])
+celery_app.conf.update(
+    worker_send_task_events=True,
+    task_send_sent_event=True,
+)
